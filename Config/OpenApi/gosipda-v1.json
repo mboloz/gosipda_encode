@@ -1,0 +1,5698 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "GoSIPDA REST API",
+    "version": "1.0.0",
+    "description": "Referensi OpenAPI GoSIPDA untuk integrasi SIMIF/M2M dan USER_APP/Mobile. Patch 323 menambahkan self-service profile user Mobile: baca/update profile, upload foto, dan ubah password.",
+    "x-gosipda-patch": 323,
+    "x-gosipda-canonical-app": "app322",
+    "x-gosipda-db": "gosipda18",
+    "x-gosipda-route-coverage-required": true,
+    "x-gosipda-notes": [
+      "USER_APP memakai signed Bearer access token hasil POST /api/v1/auth/login.",
+      "SIMIF/M2M memakai Bearer token client. Client auth_mode TOKEN_HMAC juga wajib mengirim X-API-Timestamp dan X-API-Signature.",
+      "Signature HMAC = hex HMAC-SHA256(timestamp + '.' + raw request body, secret). Prefix sha256= diterima.",
+      "Timestamp HMAC ditolak bila selisih lebih dari 600 detik.",
+      "Write USER_APP menggunakan Idempotency-Key; beberapa endpoint juga menerima client_request_id sebagai fallback.",
+      "Pagination USER_APP memiliki hard cap 100 pada controller dan model."
+    ]
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "GoSIPDA server aktif"
+    }
+  ],
+  "tags": [
+    {
+      "name": "SIMIF System",
+      "description": "Health/ping integrasi M2M."
+    },
+    {
+      "name": "SIMIF Reference",
+      "description": "Referensi tujuan SIPDA yang diizinkan untuk export/import."
+    },
+    {
+      "name": "SIMIF Import",
+      "description": "Import replace SIMIF/M2M."
+    },
+    {
+      "name": "Authentication",
+      "description": "Login USER_APP dan identitas token."
+    },
+    {
+      "name": "Account",
+      "description": "Context user, role, periode, permission, dan scope aktif."
+    },
+    {
+      "name": "Reference",
+      "description": "Periode, gudang, dan master barang/rekening."
+    },
+    {
+      "name": "Stock",
+      "description": "Snapshot stok ter-scope."
+    },
+    {
+      "name": "Opening Balance",
+      "description": "Saldo Awal read/write."
+    },
+    {
+      "name": "Addition",
+      "description": "Penambahan read/write."
+    },
+    {
+      "name": "Issue",
+      "description": "Pengeluaran FIFO read/preflight/write."
+    },
+    {
+      "name": "History",
+      "description": "Riwayat transaksi unified."
+    },
+    {
+      "name": "Reports",
+      "description": "Laporan transaksi JSON dan PDF."
+    }
+  ],
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health probe USER_APP/Mobile",
+        "description": "Endpoint publik ringan untuk memastikan URL yang dimasukkan pengguna benar-benar menunjuk ke REST API GoSIPDA sebelum konfigurasi server disimpan. Tidak memerlukan token dan tidak mengembalikan data sensitif.",
+        "operationId": "mobile_health_get",
+        "x-codeigniter-route": "api/v1/health",
+        "x-gosipda-auth": "PUBLIC_HEALTH",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API GoSIPDA tersedia",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthSuccessEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Login USER_APP",
+        "description": "Login dengan client_code + username + password. client_code dapat dikirim via X-API-Client atau body.",
+        "operationId": "mobile_login_post",
+        "x-codeigniter-route": "api/v1/auth/login",
+        "x-gosipda-auth": "PUBLIC_LOGIN",
+        "x-gosipda-rate-limit": true,
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "X-API-Client",
+            "in": "header",
+            "required": false,
+            "description": "Identifier aplikasi USER_APP. Alternatif: client_code pada body.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "Maintenance/app registration belum valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Profil user/token aktif",
+        "description": "",
+        "operationId": "api_v1_me_authentication_get",
+        "x-codeigniter-route": "api/v1/me",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/context": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Context USER_APP",
+        "description": "Mengembalikan user, role, permission, scope, periode aktif, dan capability yang dibutuhkan Mobile.",
+        "operationId": "api_v1_context_account_get",
+        "x-codeigniter-route": "api/v1/context",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/references/pemda": {
+      "get": {
+        "tags": [
+          "Reference"
+        ],
+        "summary": "Identitas Pemerintah Daerah",
+        "description": "Mengembalikan identitas Pemda aktif beserta URL logo yang dapat digunakan GoSIPDA Mobile.",
+        "operationId": "api_v1_references_pemda_reference_get",
+        "x-codeigniter-route": "api/v1/references/pemda",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "data"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "id_pemda",
+                        "name",
+                        "capital",
+                        "address",
+                        "logo",
+                        "logo_url"
+                      ],
+                      "properties": {
+                        "id_pemda": {
+                          "type": "integer",
+                          "example": 1
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Pemerintah Kabupaten Contoh"
+                        },
+                        "capital": {
+                          "type": "string",
+                          "example": "Contoh"
+                        },
+                        "address": {
+                          "type": "string",
+                          "example": "Jl. Pemerintahan No. 1"
+                        },
+                        "logo": {
+                          "type": "string",
+                          "example": "pemda_xxx.png"
+                        },
+                        "logo_url": {
+                          "type": "string",
+                          "format": "uri",
+                          "example": "https://server.example/assets/images/logo/pemda_xxx.png"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Data Pemda belum tersedia"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/references/periode": {
+      "get": {
+        "tags": [
+          "Reference"
+        ],
+        "summary": "Daftar periode",
+        "description": "",
+        "operationId": "api_v1_references_periode_reference_get",
+        "x-codeigniter-route": "api/v1/references/periode",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/references/gudang": {
+      "get": {
+        "tags": [
+          "Reference"
+        ],
+        "summary": "Daftar gudang ter-scope",
+        "description": "",
+        "operationId": "api_v1_references_gudang_reference_get",
+        "x-codeigniter-route": "api/v1/references/gudang",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/items": {
+      "get": {
+        "tags": [
+          "Reference"
+        ],
+        "summary": "Master barang/rekening",
+        "description": "",
+        "operationId": "api_v1_items_reference_get",
+        "x-codeigniter-route": "api/v1/items",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Cari nama/uraian/merk/type/kode.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Halaman.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Hard cap 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/items/detail": {
+      "get": {
+        "tags": [
+          "Reference"
+        ],
+        "summary": "Detail barang/rekening by exact code",
+        "description": "",
+        "operationId": "api_v1_items_detail_reference_get",
+        "x-codeigniter-route": "api/v1/items/detail",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "description": "Kode 8 level.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+(?:\\.\\d+){7}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/stock": {
+      "get": {
+        "tags": [
+          "Stock"
+        ],
+        "summary": "Snapshot stok",
+        "description": "",
+        "operationId": "api_v1_stock_stock_get",
+        "x-codeigniter-route": "api/v1/stock",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id_periode",
+            "in": "query",
+            "required": false,
+            "description": "ID periode. Jika kosong, server memakai periode aktif.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Scope urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_bidang",
+            "in": "query",
+            "required": false,
+            "description": "Scope bidang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_unit",
+            "in": "query",
+            "required": false,
+            "description": "Scope unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_sub",
+            "in": "query",
+            "required": false,
+            "description": "Scope sub unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_gd",
+            "in": "query",
+            "required": false,
+            "description": "Scope gudang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Pencarian teks.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "item",
+            "in": "query",
+            "required": false,
+            "description": "Kode barang/rekening 8 level, format n.n.n.n.n.n.n.n.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal awal YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal akhir YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "Kode jenis transaksi.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Nomor halaman, minimal 1.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Jumlah baris per halaman. Hard cap server 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/opening-balances": {
+      "get": {
+        "tags": [
+          "Opening Balance"
+        ],
+        "summary": "Daftar Saldo Awal",
+        "description": "",
+        "operationId": "api_v1_opening-balances_opening_balance_get",
+        "x-codeigniter-route": "api/v1/opening-balances",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id_periode",
+            "in": "query",
+            "required": false,
+            "description": "ID periode. Jika kosong, server memakai periode aktif.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Scope urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_bidang",
+            "in": "query",
+            "required": false,
+            "description": "Scope bidang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_unit",
+            "in": "query",
+            "required": false,
+            "description": "Scope unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_sub",
+            "in": "query",
+            "required": false,
+            "description": "Scope sub unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_gd",
+            "in": "query",
+            "required": false,
+            "description": "Scope gudang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Pencarian teks.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "item",
+            "in": "query",
+            "required": false,
+            "description": "Kode barang/rekening 8 level, format n.n.n.n.n.n.n.n.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal awal YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal akhir YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "Kode jenis transaksi.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Nomor halaman, minimal 1.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Jumlah baris per halaman. Hard cap server 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Opening Balance"
+        ],
+        "summary": "Tambah Saldo Awal",
+        "description": "Write idempotent pada periode aktif. Scope harus valid sampai gudang.",
+        "operationId": "api_v1_opening-balances_opening_balance_post",
+        "x-codeigniter-route": "api/v1/opening-balances",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpeningBalanceMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/opening-balances/{id}": {
+      "get": {
+        "tags": [
+          "Opening Balance"
+        ],
+        "summary": "Detail Saldo Awal",
+        "description": "",
+        "operationId": "api_v1_opening-balances_segment_opening_balance_get",
+        "x-codeigniter-route": "api/v1/opening-balances/(:segment)",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Composite ID Saldo Awal dari response list.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Opening Balance"
+        ],
+        "summary": "Ubah Saldo Awal",
+        "description": "version_token wajib; source integrasi eksternal read-only.",
+        "operationId": "api_v1_opening-balances_segment_opening_balance_put",
+        "x-codeigniter-route": "api/v1/opening-balances/(:segment)",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Composite ID Saldo Awal.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpeningBalanceMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/additions": {
+      "get": {
+        "tags": [
+          "Addition"
+        ],
+        "summary": "Daftar Penambahan",
+        "description": "",
+        "operationId": "api_v1_additions_addition_get",
+        "x-codeigniter-route": "api/v1/additions",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id_periode",
+            "in": "query",
+            "required": false,
+            "description": "ID periode. Jika kosong, server memakai periode aktif.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Scope urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_bidang",
+            "in": "query",
+            "required": false,
+            "description": "Scope bidang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_unit",
+            "in": "query",
+            "required": false,
+            "description": "Scope unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_sub",
+            "in": "query",
+            "required": false,
+            "description": "Scope sub unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_gd",
+            "in": "query",
+            "required": false,
+            "description": "Scope gudang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Pencarian teks.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "item",
+            "in": "query",
+            "required": false,
+            "description": "Kode barang/rekening 8 level, format n.n.n.n.n.n.n.n.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal awal YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal akhir YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "Kode jenis transaksi.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Nomor halaman, minimal 1.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Jumlah baris per halaman. Hard cap server 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Addition"
+        ],
+        "summary": "Tambah Penambahan",
+        "description": "",
+        "operationId": "api_v1_additions_addition_post",
+        "x-codeigniter-route": "api/v1/additions",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdditionMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/additions/{id}": {
+      "get": {
+        "tags": [
+          "Addition"
+        ],
+        "summary": "Detail Penambahan",
+        "description": "",
+        "operationId": "api_v1_additions_num_addition_get",
+        "x-codeigniter-route": "api/v1/additions/(:num)",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "id_pm.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Addition"
+        ],
+        "summary": "Ubah Penambahan",
+        "description": "version_token wajib. Transfer Masuk otomatis tidak dapat diubah langsung.",
+        "operationId": "api_v1_additions_num_addition_put",
+        "x-codeigniter-route": "api/v1/additions/(:num)",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "id_pm.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdditionMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/issues": {
+      "get": {
+        "tags": [
+          "Issue"
+        ],
+        "summary": "Daftar Pengeluaran",
+        "description": "",
+        "operationId": "api_v1_issues_issue_get",
+        "x-codeigniter-route": "api/v1/issues",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id_periode",
+            "in": "query",
+            "required": false,
+            "description": "ID periode. Jika kosong, server memakai periode aktif.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Scope urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_bidang",
+            "in": "query",
+            "required": false,
+            "description": "Scope bidang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_unit",
+            "in": "query",
+            "required": false,
+            "description": "Scope unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_sub",
+            "in": "query",
+            "required": false,
+            "description": "Scope sub unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_gd",
+            "in": "query",
+            "required": false,
+            "description": "Scope gudang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Pencarian teks.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "item",
+            "in": "query",
+            "required": false,
+            "description": "Kode barang/rekening 8 level, format n.n.n.n.n.n.n.n.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal awal YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal akhir YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "Kode jenis transaksi.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Nomor halaman, minimal 1.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Jumlah baris per halaman. Hard cap server 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Issue"
+        ],
+        "summary": "Tambah Pengeluaran FIFO",
+        "description": "Server memvalidasi stok aman dan menjalankan engine FIFO/micro recalculate existing.",
+        "operationId": "api_v1_issues_issue_post",
+        "x-codeigniter-route": "api/v1/issues",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/issues/preflight": {
+      "post": {
+        "tags": [
+          "Issue"
+        ],
+        "summary": "Preflight stok aman Pengeluaran",
+        "description": "Validasi stok/scope/type sebelum write; tidak melakukan mutasi transaksi.",
+        "operationId": "api_v1_issues_preflight_issue_post",
+        "x-codeigniter-route": "api/v1/issues/preflight",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssuePreflightRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/issues/{id}": {
+      "get": {
+        "tags": [
+          "Issue"
+        ],
+        "summary": "Detail/preview Pengeluaran",
+        "description": "",
+        "operationId": "api_v1_issues_num_issue_get",
+        "x-codeigniter-route": "api/v1/issues/(:num)",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "id_pk.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Issue"
+        ],
+        "summary": "Ubah Pengeluaran",
+        "description": "version_token wajib; FIFO/chronology guard tetap berlaku.",
+        "operationId": "api_v1_issues_num_issue_put",
+        "x-codeigniter-route": "api/v1/issues/(:num)",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "id_pk.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/transactions": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "Riwayat transaksi unified",
+        "description": "",
+        "operationId": "api_v1_transactions_history_get",
+        "x-codeigniter-route": "api/v1/transactions",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id_periode",
+            "in": "query",
+            "required": false,
+            "description": "ID periode. Jika kosong, server memakai periode aktif.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Scope urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_bidang",
+            "in": "query",
+            "required": false,
+            "description": "Scope bidang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_unit",
+            "in": "query",
+            "required": false,
+            "description": "Scope unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_sub",
+            "in": "query",
+            "required": false,
+            "description": "Scope sub unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_gd",
+            "in": "query",
+            "required": false,
+            "description": "Scope gudang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Pencarian teks.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "item",
+            "in": "query",
+            "required": false,
+            "description": "Kode barang/rekening 8 level, format n.n.n.n.n.n.n.n.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal awal YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal akhir YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "Kode jenis transaksi.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Nomor halaman, minimal 1.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Jumlah baris per halaman. Hard cap server 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/transactions/{type}/{id}": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "Detail transaksi unified",
+        "description": "",
+        "operationId": "api_v1_transactions_segment_segment_history_get",
+        "x-codeigniter-route": "api/v1/transactions/(:segment)/(:segment)",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "description": "opening_balance | addition | issue.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID transaksi sesuai type.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/stock": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Laporan Stok JSON",
+        "description": "",
+        "operationId": "api_v1_reports_stock_reports_get",
+        "x-codeigniter-route": "api/v1/reports/stock",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id_periode",
+            "in": "query",
+            "required": false,
+            "description": "ID periode. Jika kosong, server memakai periode aktif.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Scope urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_bidang",
+            "in": "query",
+            "required": false,
+            "description": "Scope bidang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_unit",
+            "in": "query",
+            "required": false,
+            "description": "Scope unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_sub",
+            "in": "query",
+            "required": false,
+            "description": "Scope sub unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_gd",
+            "in": "query",
+            "required": false,
+            "description": "Scope gudang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Pencarian teks.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "item",
+            "in": "query",
+            "required": false,
+            "description": "Kode barang/rekening 8 level, format n.n.n.n.n.n.n.n.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal awal YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal akhir YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "Kode jenis transaksi.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Nomor halaman, minimal 1.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Jumlah baris per halaman. Hard cap server 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/opening-balances": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Laporan Saldo Awal JSON",
+        "description": "",
+        "operationId": "api_v1_reports_opening-balances_reports_get",
+        "x-codeigniter-route": "api/v1/reports/opening-balances",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id_periode",
+            "in": "query",
+            "required": false,
+            "description": "ID periode. Jika kosong, server memakai periode aktif.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Scope urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_bidang",
+            "in": "query",
+            "required": false,
+            "description": "Scope bidang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_unit",
+            "in": "query",
+            "required": false,
+            "description": "Scope unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_sub",
+            "in": "query",
+            "required": false,
+            "description": "Scope sub unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_gd",
+            "in": "query",
+            "required": false,
+            "description": "Scope gudang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Pencarian teks.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "item",
+            "in": "query",
+            "required": false,
+            "description": "Kode barang/rekening 8 level, format n.n.n.n.n.n.n.n.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal awal YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal akhir YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "Kode jenis transaksi.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Nomor halaman, minimal 1.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Jumlah baris per halaman. Hard cap server 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/additions": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Laporan Penambahan JSON",
+        "description": "",
+        "operationId": "api_v1_reports_additions_reports_get",
+        "x-codeigniter-route": "api/v1/reports/additions",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id_periode",
+            "in": "query",
+            "required": false,
+            "description": "ID periode. Jika kosong, server memakai periode aktif.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Scope urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_bidang",
+            "in": "query",
+            "required": false,
+            "description": "Scope bidang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_unit",
+            "in": "query",
+            "required": false,
+            "description": "Scope unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_sub",
+            "in": "query",
+            "required": false,
+            "description": "Scope sub unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_gd",
+            "in": "query",
+            "required": false,
+            "description": "Scope gudang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Pencarian teks.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "item",
+            "in": "query",
+            "required": false,
+            "description": "Kode barang/rekening 8 level, format n.n.n.n.n.n.n.n.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal awal YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal akhir YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "Kode jenis transaksi.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Nomor halaman, minimal 1.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Jumlah baris per halaman. Hard cap server 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/issues": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Laporan Pengeluaran JSON",
+        "description": "",
+        "operationId": "api_v1_reports_issues_reports_get",
+        "x-codeigniter-route": "api/v1/reports/issues",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id_periode",
+            "in": "query",
+            "required": false,
+            "description": "ID periode. Jika kosong, server memakai periode aktif.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Scope urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_bidang",
+            "in": "query",
+            "required": false,
+            "description": "Scope bidang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_unit",
+            "in": "query",
+            "required": false,
+            "description": "Scope unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_sub",
+            "in": "query",
+            "required": false,
+            "description": "Scope sub unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_gd",
+            "in": "query",
+            "required": false,
+            "description": "Scope gudang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Pencarian teks.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "item",
+            "in": "query",
+            "required": false,
+            "description": "Kode barang/rekening 8 level, format n.n.n.n.n.n.n.n.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal awal YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "Tanggal akhir YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "Kode jenis transaksi.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Nomor halaman, minimal 1.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Jumlah baris per halaman. Hard cap server 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/pdf": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Generate PDF laporan",
+        "description": "Menggunakan konfigurasi/view report Web canonical. Response berhasil adalah application/pdf.",
+        "operationId": "api_v1_reports_pdf_reports_post",
+        "x-codeigniter-route": "api/v1/reports/pdf",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PDF berhasil dibuat",
+            "headers": {
+              "X-GoSIPDA-Report-Id": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-GoSIPDA-Row-Count": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "description": "Konfigurasi report tidak sesuai canonical",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportPdfRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrasi/ping": {
+      "get": {
+        "tags": [
+          "SIMIF System"
+        ],
+        "summary": "Ping integrasi M2M",
+        "description": "",
+        "operationId": "m2m_api_integrasi_ping_simif_system_get",
+        "x-codeigniter-route": "api/integrasi/ping",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "SIMIF System"
+        ],
+        "summary": "Ping integrasi M2M (POST)",
+        "description": "",
+        "operationId": "m2m_api_integrasi_ping_simif_system_post",
+        "x-codeigniter-route": "api/integrasi/ping",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrasi/import/replace": {
+      "post": {
+        "tags": [
+          "SIMIF Import"
+        ],
+        "summary": "Import replace SIMIF",
+        "description": "Replace data import client pada tahun/periode/scope tujuan. Non-FIFO preservation dan scope enforcement mengikuti engine existing.",
+        "operationId": "m2m_api_integrasi_import_replace_simif_import_post",
+        "x-codeigniter-route": "api/integrasi/import/replace",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Legacy fallback external_batch.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimifReplaceRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrasi/referensi/urusan": {
+      "get": {
+        "tags": [
+          "SIMIF Reference"
+        ],
+        "summary": "Referensi urusan",
+        "description": "",
+        "operationId": "m2m_api_integrasi_referensi_urusan_simif_reference_get",
+        "x-codeigniter-route": "api/integrasi/referensi/urusan",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Keyword pencarian.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Hard cap referensi SIMIF 1000.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "SIMIF Reference"
+        ],
+        "summary": "Referensi urusan (POST)",
+        "description": "",
+        "operationId": "m2m_api_integrasi_referensi_urusan_simif_reference_post",
+        "x-codeigniter-route": "api/integrasi/referensi/urusan",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceQuery"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrasi/referensi/bidang": {
+      "get": {
+        "tags": [
+          "SIMIF Reference"
+        ],
+        "summary": "Referensi bidang",
+        "description": "",
+        "operationId": "m2m_api_integrasi_referensi_bidang_simif_reference_get",
+        "x-codeigniter-route": "api/integrasi/referensi/bidang",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Filter wajib kd_urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Keyword pencarian.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Hard cap referensi SIMIF 1000.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "SIMIF Reference"
+        ],
+        "summary": "Referensi bidang (POST)",
+        "description": "",
+        "operationId": "m2m_api_integrasi_referensi_bidang_simif_reference_post",
+        "x-codeigniter-route": "api/integrasi/referensi/bidang",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceQuery"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrasi/referensi/unit": {
+      "get": {
+        "tags": [
+          "SIMIF Reference"
+        ],
+        "summary": "Referensi unit",
+        "description": "",
+        "operationId": "m2m_api_integrasi_referensi_unit_simif_reference_get",
+        "x-codeigniter-route": "api/integrasi/referensi/unit",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Filter wajib kd_urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_bidang",
+            "in": "query",
+            "required": false,
+            "description": "Filter wajib kd_bidang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Keyword pencarian.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Hard cap referensi SIMIF 1000.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "SIMIF Reference"
+        ],
+        "summary": "Referensi unit (POST)",
+        "description": "",
+        "operationId": "m2m_api_integrasi_referensi_unit_simif_reference_post",
+        "x-codeigniter-route": "api/integrasi/referensi/unit",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceQuery"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrasi/referensi/sub-unit": {
+      "get": {
+        "tags": [
+          "SIMIF Reference"
+        ],
+        "summary": "Referensi sub-unit",
+        "description": "",
+        "operationId": "m2m_api_integrasi_referensi_sub-unit_simif_reference_get",
+        "x-codeigniter-route": "api/integrasi/referensi/sub-unit",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Filter wajib kd_urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_bidang",
+            "in": "query",
+            "required": false,
+            "description": "Filter wajib kd_bidang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_unit",
+            "in": "query",
+            "required": false,
+            "description": "Filter wajib kd_unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Keyword pencarian.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Hard cap referensi SIMIF 1000.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "SIMIF Reference"
+        ],
+        "summary": "Referensi sub-unit (POST)",
+        "description": "",
+        "operationId": "m2m_api_integrasi_referensi_sub-unit_simif_reference_post",
+        "x-codeigniter-route": "api/integrasi/referensi/sub-unit",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceQuery"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrasi/referensi/gudang": {
+      "get": {
+        "tags": [
+          "SIMIF Reference"
+        ],
+        "summary": "Referensi gudang",
+        "description": "",
+        "operationId": "m2m_api_integrasi_referensi_gudang_simif_reference_get",
+        "x-codeigniter-route": "api/integrasi/referensi/gudang",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          },
+          {
+            "name": "kd_urusan",
+            "in": "query",
+            "required": false,
+            "description": "Filter wajib kd_urusan.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_bidang",
+            "in": "query",
+            "required": false,
+            "description": "Filter wajib kd_bidang.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_unit",
+            "in": "query",
+            "required": false,
+            "description": "Filter wajib kd_unit.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "kd_sub",
+            "in": "query",
+            "required": false,
+            "description": "Filter wajib kd_sub.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Keyword pencarian.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Hard cap referensi SIMIF 1000.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "SIMIF Reference"
+        ],
+        "summary": "Referensi gudang (POST)",
+        "description": "",
+        "operationId": "m2m_api_integrasi_referensi_gudang_simif_reference_post",
+        "x-codeigniter-route": "api/integrasi/referensi/gudang",
+        "x-gosipda-auth": "M2M_BEARER",
+        "x-gosipda-hmac-required-when": "client.auth_mode=TOKEN_HMAC or hmac_required=1",
+        "security": [
+          {
+            "M2MBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/HmacTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/HmacSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload/request tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer/HMAC tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Client/IP/scope tidak diizinkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate external batch/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validasi bisnis gagal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server/import",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/M2MResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceQuery"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/profile": {
+      "get": {
+        "tags": [
+          "Profile"
+        ],
+        "summary": "Baca profile user login",
+        "description": "Mengembalikan profile lengkap milik user pada Bearer token aktif. Endpoint tidak menerima id_user dari client.",
+        "operationId": "mobile_profile_get",
+        "x-codeigniter-route": "api/v1/profile",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Profile"
+        ],
+        "summary": "Update profile user login",
+        "description": "Self-service update hanya untuk user pada Bearer token. Username, role, dan scope tidak dapat diubah.",
+        "operationId": "mobile_profile_update",
+        "x-codeigniter-route": "api/v1/profile",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileUserProfileUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/profile/photo": {
+      "post": {
+        "tags": [
+          "Profile"
+        ],
+        "summary": "Ubah foto profile user login",
+        "description": "Upload JPG, PNG, atau WEBP melalui field multipart photo_file. Batas ukuran mengikuti konfigurasi upload server. Server membuat thumbnail 300x300.",
+        "operationId": "mobile_profile_photo_update",
+        "x-codeigniter-route": "api/v1/profile/photo",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "photo_file"
+                ],
+                "properties": {
+                  "photo_file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/profile/password": {
+      "put": {
+        "tags": [
+          "Profile"
+        ],
+        "summary": "Ubah password user login",
+        "description": "Memerlukan password lama. Password baru mengikuti PasswordPolicy/app_pass_min server. Endpoint hanya mengubah user pada Bearer token.",
+        "operationId": "mobile_profile_password_update",
+        "x-codeigniter-route": "api/v1/profile/password",
+        "x-gosipda-auth": "USER_APP_BEARER",
+        "x-gosipda-rate-limit": true,
+        "security": [
+          {
+            "MobileBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilePasswordChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Berhasil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "MobileBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "GoSIPDA signed access token",
+        "description": "Token USER_APP dari POST /api/v1/auth/login."
+      },
+      "M2MBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Static API client token untuk SIMIF/M2M."
+      }
+    },
+    "parameters": {
+      "RequestId": {
+        "name": "X-Request-ID",
+        "in": "header",
+        "required": false,
+        "description": "Opsional request correlation ID. Server mengembalikan X-Request-ID pada response.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "Wajib pada create write USER_APP. 8-100 karakter valid.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "HmacTimestamp": {
+        "name": "X-API-Timestamp",
+        "in": "header",
+        "required": false,
+        "description": "Wajib bila client M2M memakai TOKEN_HMAC. ISO/date string yang dapat diparse server; toleransi maksimal 600 detik.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "HmacSignature": {
+        "name": "X-API-Signature",
+        "in": "header",
+        "required": false,
+        "description": "Wajib bila client M2M memakai TOKEN_HMAC. HMAC-SHA256(timestamp + '.' + raw body, secret).",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Token hilang, invalid, expired, atau revoked.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MobileErrorEnvelope"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Permission, scope, IP, atau akses client ditolak.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MobileErrorEnvelope"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Conflict bisnis, version token, idempotency, periode, stok, atau sumber read-only.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MobileErrorEnvelope"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Payload/parameter tidak valid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MobileErrorEnvelope"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Rate limit terlampaui.",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "X-RateLimit-Limit": {
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "X-RateLimit-Remaining": {
+            "schema": {
+              "type": "integer"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MobileErrorEnvelope"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Kesalahan internal server.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MobileErrorEnvelope"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "MobileSuccessEnvelope": {
+        "type": "object",
+        "required": [
+          "status",
+          "request_id",
+          "data"
+        ],
+        "properties": {
+          "status": {
+            "type": "boolean",
+            "example": true
+          },
+          "request_id": {
+            "type": "string",
+            "example": "01J...REQ"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "MobileErrorEnvelope": {
+        "type": "object",
+        "required": [
+          "status",
+          "request_id",
+          "error"
+        ],
+        "properties": {
+          "status": {
+            "type": "boolean",
+            "example": false
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "example": "VALIDATION_ERROR"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "M2MResponse": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "client_code": {
+            "type": "string"
+          },
+          "batch_id": {
+            "type": "integer"
+          },
+          "external_batch": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "summary": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "Scope": {
+        "type": "object",
+        "properties": {
+          "kd_urusan": {
+            "type": "integer"
+          },
+          "kd_bidang": {
+            "type": "integer"
+          },
+          "kd_unit": {
+            "type": "integer"
+          },
+          "kd_sub": {
+            "type": "integer"
+          },
+          "kd_gd": {
+            "type": "integer"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "client_code": {
+            "type": "string",
+            "description": "Boleh dikirim di body atau header X-API-Client."
+          },
+          "username": {
+            "type": "string",
+            "description": "Username atau ID login yang didukung server."
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "example": {
+          "client_code": "MOBILE",
+          "username": "operator",
+          "password": "********"
+        }
+      },
+      "TransactionItemInput": {
+        "type": "object",
+        "required": [
+          "item_code",
+          "qty"
+        ],
+        "properties": {
+          "item_code": {
+            "type": "string",
+            "pattern": "^\\d+(?:\\.\\d+){7}$",
+            "example": "1.2.3.4.5.6.7.8"
+          },
+          "qty": {
+            "type": "number",
+            "minimum": 0
+          },
+          "unit_price": {
+            "type": "number",
+            "minimum": 0
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "OpeningBalanceMutation": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Scope"
+          },
+          {
+            "type": "object",
+            "required": [
+              "item_code",
+              "qty",
+              "unit_price"
+            ],
+            "properties": {
+              "id_periode": {
+                "type": "integer"
+              },
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "item_code": {
+                "type": "string",
+                "pattern": "^\\d+(?:\\.\\d+){7}$"
+              },
+              "qty": {
+                "type": "number"
+              },
+              "unit_price": {
+                "type": "number"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "version_token": {
+                "type": "string",
+                "description": "Wajib pada update."
+              },
+              "kd_prog": {
+                "type": "integer",
+                "nullable": true
+              },
+              "id_prog": {
+                "type": "integer",
+                "nullable": true
+              },
+              "kd_kegiatan": {
+                "type": "integer",
+                "nullable": true
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      },
+      "AdditionMutation": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Scope"
+          },
+          {
+            "type": "object",
+            "required": [
+              "type_code",
+              "date",
+              "partner",
+              "receiver",
+              "items"
+            ],
+            "properties": {
+              "id_periode": {
+                "type": "integer"
+              },
+              "type_code": {
+                "type": "integer",
+                "enum": [
+                  1,
+                  3,
+                  4
+                ],
+                "description": "1 Pembelian, 3 Hibah Masuk, 4 Koreksi Masuk. Type 2 Transfer Masuk dikelola otomatis dari Transfer Keluar."
+              },
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "description": {
+                "type": "string"
+              },
+              "partner": {
+                "type": "string"
+              },
+              "receiver": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "receiver_nip": {
+                "type": "string"
+              },
+              "receiver_position": {
+                "type": "string"
+              },
+              "grant_type": {
+                "type": "integer",
+                "nullable": true
+              },
+              "bap_number": {
+                "type": "string"
+              },
+              "bap_date": {
+                "type": "string",
+                "format": "date",
+                "nullable": true
+              },
+              "version_token": {
+                "type": "string",
+                "description": "Wajib pada update."
+              },
+              "client_request_id": {
+                "type": "string"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "items": {
+                  "$ref": "#/components/schemas/TransactionItemInput"
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      },
+      "IssueMutation": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Scope"
+          },
+          {
+            "type": "object",
+            "required": [
+              "type_code",
+              "date",
+              "giver",
+              "receiver",
+              "items"
+            ],
+            "properties": {
+              "id_periode": {
+                "type": "integer"
+              },
+              "type_code": {
+                "type": "integer",
+                "enum": [
+                  5,
+                  6,
+                  7,
+                  8
+                ],
+                "description": "5 Pemakaian, 6 Transfer Keluar, 7 Hibah Keluar, 8 Koreksi Keluar."
+              },
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "description": {
+                "type": "string"
+              },
+              "giver": {
+                "type": "string"
+              },
+              "receiver": {
+                "type": "string"
+              },
+              "giver_nip": {
+                "type": "string"
+              },
+              "giver_position": {
+                "type": "string"
+              },
+              "receiver_nip": {
+                "type": "string"
+              },
+              "receiver_position": {
+                "type": "string"
+              },
+              "dest_kd_urusan": {
+                "type": "integer"
+              },
+              "dest_kd_bidang": {
+                "type": "integer"
+              },
+              "dest_kd_unit": {
+                "type": "integer"
+              },
+              "dest_kd_sub": {
+                "type": "integer"
+              },
+              "dest_kd_gd": {
+                "type": "integer"
+              },
+              "grant_type": {
+                "type": "integer",
+                "nullable": true
+              },
+              "correction_type": {
+                "type": "integer",
+                "nullable": true
+              },
+              "version_token": {
+                "type": "string",
+                "description": "Wajib pada update."
+              },
+              "client_request_id": {
+                "type": "string"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "items": {
+                  "$ref": "#/components/schemas/TransactionItemInput"
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      },
+      "IssuePreflightRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Scope"
+          },
+          {
+            "type": "object",
+            "required": [
+              "type_code",
+              "date",
+              "items"
+            ],
+            "properties": {
+              "id_periode": {
+                "type": "integer"
+              },
+              "type_code": {
+                "type": "integer",
+                "enum": [
+                  5,
+                  6,
+                  7,
+                  8
+                ]
+              },
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "destination": {
+                "$ref": "#/components/schemas/Scope"
+              },
+              "grant_type": {
+                "type": "integer"
+              },
+              "correction_type": {
+                "type": "integer"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "items": {
+                  "$ref": "#/components/schemas/TransactionItemInput"
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      },
+      "ReportPdfRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Scope"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id_report"
+            ],
+            "properties": {
+              "id_report": {
+                "type": "integer",
+                "minimum": 201,
+                "maximum": 210
+              },
+              "id_periode": {
+                "type": "integer"
+              },
+              "date_from": {
+                "type": "string",
+                "format": "date"
+              },
+              "date_to": {
+                "type": "string",
+                "format": "date"
+              },
+              "item": {
+                "type": "string",
+                "pattern": "^\\d+(?:\\.\\d+){7}$"
+              },
+              "tanggal_ttd": {
+                "type": "string",
+                "format": "date"
+              },
+              "penandatangan": {
+                "type": "string"
+              },
+              "jabatan": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      },
+      "ReferenceQuery": {
+        "type": "object",
+        "properties": {
+          "kd_urusan": {
+            "type": "integer"
+          },
+          "kd_bidang": {
+            "type": "integer"
+          },
+          "kd_unit": {
+            "type": "integer"
+          },
+          "kd_sub": {
+            "type": "integer"
+          },
+          "q": {
+            "type": "string"
+          },
+          "keyword": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 500
+          }
+        },
+        "additionalProperties": true
+      },
+      "SimifReplaceRequest": {
+        "type": "object",
+        "required": [
+          "tahun",
+          "kd_urusan",
+          "kd_bidang",
+          "kd_unit",
+          "kd_sub",
+          "kd_gd"
+        ],
+        "properties": {
+          "tahun": {
+            "type": "integer",
+            "minimum": 2000,
+            "maximum": 2100
+          },
+          "kd_urusan": {
+            "type": "integer"
+          },
+          "kd_bidang": {
+            "type": "integer"
+          },
+          "kd_unit": {
+            "type": "integer"
+          },
+          "kd_sub": {
+            "type": "integer"
+          },
+          "kd_gd": {
+            "type": "integer"
+          },
+          "external_batch": {
+            "type": "string",
+            "description": "Opsional. Jika diisi harus unik per client. Bisa juga memakai X-Idempotency-Key pada kontrak legacy."
+          },
+          "data": {
+            "type": "object",
+            "description": "Payload transaksi SIMIF. Server menerima saldo awal/penambahan/pengurangan sesuai kontrak import existing.",
+            "additionalProperties": true
+          },
+          "saldo_awal": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "penambahan": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "pengurangan": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "HealthData": {
+        "type": "object",
+        "required": [
+          "status",
+          "service",
+          "api_version",
+          "server_time"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "UP"
+            ],
+            "example": "UP"
+          },
+          "service": {
+            "type": "string",
+            "enum": [
+              "GoSIPDA"
+            ],
+            "example": "GoSIPDA"
+          },
+          "api_version": {
+            "type": "string",
+            "example": "v1"
+          },
+          "server_time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "HealthSuccessEnvelope": {
+        "type": "object",
+        "required": [
+          "status",
+          "request_id",
+          "data"
+        ],
+        "properties": {
+          "status": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "example": true
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/HealthData"
+          }
+        }
+      },
+      "MobileUserProfile": {
+        "type": "object",
+        "properties": {
+          "id_user": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "nama_lengkap": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "nip": {
+            "type": "string",
+            "maxLength": 30
+          },
+          "jabatan": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "tgl_lahir": {
+            "type": "string",
+            "format": "date",
+            "description": "YYYY-MM-DD"
+          },
+          "jenis_kelamin": {
+            "type": "string",
+            "enum": [
+              "LAKI-LAKI",
+              "PEREMPUAN"
+            ]
+          },
+          "alamat": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 100
+          },
+          "photo": {
+            "type": "string"
+          },
+          "photo_url": {
+            "type": "string"
+          },
+          "id_role": {
+            "type": "integer"
+          },
+          "role_name": {
+            "type": "string"
+          },
+          "role_level": {
+            "type": "integer"
+          }
+        }
+      },
+      "MobileUserProfileUpdate": {
+        "type": "object",
+        "description": "Semua field opsional; kirim hanya field yang ingin diubah. Username/role/scope tidak dapat diubah melalui endpoint ini.",
+        "properties": {
+          "nama_lengkap": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "nip": {
+            "type": "string",
+            "maxLength": 30,
+            "nullable": true
+          },
+          "jabatan": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "tgl_lahir": {
+            "type": "string",
+            "description": "YYYY-MM-DD atau dd/mm/yyyy"
+          },
+          "jenis_kelamin": {
+            "type": "string",
+            "enum": [
+              "LAKI-LAKI",
+              "PEREMPUAN"
+            ]
+          },
+          "alamat": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "maxLength": 20,
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 100,
+            "nullable": true
+          }
+        }
+      },
+      "MobilePasswordChange": {
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password",
+          "new_password_confirmation"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "format": "password"
+          },
+          "new_password": {
+            "type": "string",
+            "format": "password",
+            "description": "Minimal mengikuti app_pass_min server."
+          },
+          "new_password_confirmation": {
+            "type": "string",
+            "format": "password"
+          }
+        }
+      }
+    }
+  }
+}
